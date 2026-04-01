@@ -1,0 +1,31 @@
+package com.shea.mini_rpc.rpc.retry;
+
+import com.shea.mini_rpc.rpc.exception.RpcException;
+import com.shea.mini_rpc.rpc.message.Response;
+import com.shea.mini_rpc.rpc.register.ServiceMetadata;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * @author : Shea.
+ * @description: TODO
+ * @since : 2026/3/31 20:51
+ */
+@Slf4j
+public class FailOverRetryPolicy implements RetryPolicy{
+    @Override
+    public Response retry(RetryContext context) throws Exception {
+        List<ServiceMetadata> metadataArrayList = new ArrayList<>(context.getServiceMetadataList());
+        metadataArrayList.remove(context.getFailService());
+        if (metadataArrayList.isEmpty()) {
+            throw new RpcException("没有可重试的provider");
+        }
+        ServiceMetadata failOverService = context.getLoadBalancer().select(metadataArrayList);
+        CompletableFuture<Response> future = context.doRpc(failOverService);
+        return future.get(Math.min(context.getRequestTimeoutMs(), context.getMethodTimeoutMs()), TimeUnit.MILLISECONDS);
+    }
+}
