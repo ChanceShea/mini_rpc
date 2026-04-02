@@ -1,7 +1,5 @@
 package com.shea.mini_rpc.rpc.consumer;
 
-import com.shea.mini_rpc.rpc.codec.RequestEncoder;
-import com.shea.mini_rpc.rpc.codec.SheaDecoder;
 import com.shea.mini_rpc.rpc.exception.RpcException;
 import com.shea.mini_rpc.rpc.loadbalance.LoadBalancer;
 import com.shea.mini_rpc.rpc.loadbalance.RandomLoadBalancer;
@@ -12,22 +10,15 @@ import com.shea.mini_rpc.rpc.register.DefaultServiceRegistry;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
 import com.shea.mini_rpc.rpc.register.ServiceRegistry;
 import com.shea.mini_rpc.rpc.retry.*;
-import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
+import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -40,47 +31,28 @@ import java.util.concurrent.TimeoutException;
 public class ConsumerProxyFactory {
 
     ConnectionManager connectionManager;
-    Map<Integer, CompletableFuture<Response>> inflightRequestTable;
     private final ServiceRegistry register;
     private final ConsumerProperties properties;
-    private final HashedWheelTimer timer;
+    private final InFlightRequestManager inFlightRequestManager;
 
     public ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
         this.properties = properties;
         this.register = new DefaultServiceRegistry();
         this.register.init(properties.getRegistryConfig());
-        this.connectionManager = new ConnectionManager(createBootstrap(properties));
-        this.inflightRequestTable = new ConcurrentHashMap<>();
-        this.timer = new HashedWheelTimer(1, TimeUnit.SECONDS, 64);
-    }
-
-    private Bootstrap createBootstrap(ConsumerProperties properties) {
-        Bootstrap bootstrap = new Bootstrap()
-                .group(new NioEventLoopGroup(properties.getWorkThreadNum()))
-                .channel(NioSocketChannel.class)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, properties.getConnectTimeoutMs())
-                .handler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel socketChannel) throws Exception {
-                        socketChannel.pipeline()
-                                .addLast(new SheaDecoder())
-                                .addLast(new RequestEncoder())
-                                .addLast(new ConsumerHandler());
-                    }
-                });
-        return bootstrap;
+        this.inFlightRequestManager = new InFlightRequestManager(properties);
+        this.connectionManager = new ConnectionManager(inFlightRequestManager,properties);
     }
 
     @SuppressWarnings("unchecked")
     public <I> I getConsumerProxy(Class<I> interfaceClass) {
         return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(),
                 new Class[]{interfaceClass},
-                new ConsumerInvocationHandler(interfaceClass, createLoadBalancer(),createRetryPolicy())
+                new ConsumerInvocationHandler(interfaceClass, createLoadBalancer(), createRetryPolicy())
         );
     }
 
     private RetryPolicy createRetryPolicy() {
-        return switch (this.properties.getRetryPolicy()){
+        return switch (this.properties.getRetryPolicy()) {
             case "retrysame" -> new RetrySameRetryPolicy();
             case "failover" -> new FailOverRetryPolicy();
             case "forking" -> new ForkingRetryPolicy();
@@ -125,41 +97,41 @@ public class ConsumerProxyFactory {
             try {
                 response = requestFuture.get(properties.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
             } catch (Exception e) {
-                long timeoutMs = properties.getMethodTimeoutMs() - (System.currentTimeMillis() - start);
-                if (timeoutMs <= 0 ){
-                    throw new TimeoutException();
-                }
-                RetryContext retryContext = new RetryContext();
-                retryContext.setFailService(provider);
-                retryContext.setServiceMetadataList(serviceMetadata);
-                retryContext.setMethodTimeoutMs(timeoutMs);
-                retryContext.setDoRpcFunction(p -> callRpcAsync(buildRequest(method,args),p));
-                retryContext.setRequestTimeoutMs(properties.getRequestTimeoutMs());
-                retryContext.setLoadBalancer(this.loadBalancer);
-                response = this.retryPolicy.retry(retryContext);
+                response = doRetry(method, args, e, start, provider, serviceMetadata);
             }
             return processResponse(response);
         }
 
+        private Response doRetry(Method method, Object[] args, Exception e, long start, ServiceMetadata provider, List<ServiceMetadata> serviceMetadata) throws Exception {
+            if (e instanceof ExecutionException ee && ee.getCause() instanceof RpcException rpcException) {
+                throw rpcException;
+            }
+            Response response;
+            long timeoutMs = properties.getMethodTimeoutMs() - (System.currentTimeMillis() - start);
+            if (timeoutMs <= 0) {
+                throw new TimeoutException();
+            }
+            log.error("rpc出现了异常，进行重试", e);
+            RetryContext retryContext = new RetryContext();
+            retryContext.setFailService(provider);
+            retryContext.setServiceMetadataList(serviceMetadata);
+            retryContext.setMethodTimeoutMs(timeoutMs);
+            retryContext.setDoRpcFunction(p -> callRpcAsync(buildRequest(method, args), p));
+            retryContext.setRequestTimeoutMs(properties.getRequestTimeoutMs());
+            retryContext.setLoadBalancer(this.loadBalancer);
+            response = this.retryPolicy.retry(retryContext);
+            return response;
+        }
+
         private CompletableFuture<Response> callRpcAsync(Request request, ServiceMetadata provider) {
-            CompletableFuture<Response> responseFuture = new CompletableFuture<>();
-            Channel channel = connectionManager.getChannel(provider.getHost(), provider.getPort());
+            CompletableFuture<Response> responseFuture = inFlightRequestManager.inFlightRequest(request, properties.getRequestTimeoutMs(),provider);
+            Channel channel = connectionManager.getChannel(provider);
             if (channel == null) {
                 responseFuture.completeExceptionally(new RpcException("provider 连接失败"));
                 return responseFuture;
             }
-            inflightRequestTable.put(request.getRequestId(), responseFuture);
-            // 每发送一个请求，就加一个定时任务，超时则进行异常结束
-            Timeout timeout = timer.newTimeout(
-                    (t) -> responseFuture.completeExceptionally(new TimeoutException()),
-                    properties.getRequestTimeoutMs(), TimeUnit.MILLISECONDS
-            );
-            responseFuture.whenComplete((r, e) -> {
-                inflightRequestTable.remove(request.getRequestId());
-                timeout.cancel();
-            });
             channel.writeAndFlush(request).addListener(f -> {
-                log.info("发送了request:{}",request.getRequestId());
+                log.info("发送了request:{}", request.getRequestId());
                 if (!f.isSuccess()) {
                     responseFuture.completeExceptionally(f.cause());
                 }
@@ -195,35 +167,6 @@ public class ConsumerProxyFactory {
                 return System.identityHashCode(proxy);
             }
             throw new UnsupportedOperationException("Proxy Object is not supported this method " + method.getName());
-        }
-    }
-
-    private class ConsumerHandler extends SimpleChannelInboundHandler<Response> {
-
-        @Override
-        protected void channelRead0(ChannelHandlerContext channelHandlerContext, Response response) throws Exception {
-            CompletableFuture<Response> responseFuture = inflightRequestTable.remove(response.getRequestId());
-            if (responseFuture == null) {
-                log.warn("request id {} is null", response.getRequestId());
-                return;
-            }
-            responseFuture.complete(response);
-        }
-
-        @Override
-        public void channelActive(ChannelHandlerContext ctx) throws Exception {
-            log.info("address:{} connected", ctx.channel().remoteAddress());
-        }
-
-        @Override
-        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            log.info("address:{} disconnected", ctx.channel().remoteAddress());
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            log.error("catch exception", cause);
-            ctx.channel().close();
         }
     }
 }

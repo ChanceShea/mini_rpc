@@ -13,6 +13,8 @@ public class ProviderProperties {
 
     private String host;
     private int port;
+    private int globalMaxRequest = 10;
+    private int preConsumerMaxRequest = 5;
     private RegistryConfig registryConfig;
     private int workThreadNum = 4;
 }

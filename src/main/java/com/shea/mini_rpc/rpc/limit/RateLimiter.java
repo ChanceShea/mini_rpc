@@ -35,7 +35,7 @@ public class RateLimiter implements Limiter {
     }
 
     @Override
-    public void release() {
+    public void release(int permits) {
 
     }
 }

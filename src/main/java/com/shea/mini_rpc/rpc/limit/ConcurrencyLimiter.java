@@ -20,7 +20,7 @@ public class ConcurrencyLimiter implements Limiter {
     }
 
     @Override
-    public void release() {
-        semaphore.release();
+    public void release(int permits) {
+        semaphore.release(permits);
     }
 }

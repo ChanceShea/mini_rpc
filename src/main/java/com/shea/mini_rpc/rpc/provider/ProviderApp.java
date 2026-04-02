@@ -17,7 +17,7 @@ public class ProviderApp {
         ProviderProperties properties = new ProviderProperties();
         properties.setRegistryConfig(config);
         properties.setHost("127.0.0.1");
-        properties.setPort(8891);
+        properties.setPort(8892);
         ProviderServer server = new ProviderServer(properties);
         server.register(Add.class,new AddImpl());
         server.start();

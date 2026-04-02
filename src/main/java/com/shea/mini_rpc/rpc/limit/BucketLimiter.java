@@ -53,7 +53,7 @@ public class BucketLimiter implements Limiter {
     }
 
     @Override
-    public void release() {
+    public void release(int release) {
 
     }
 }

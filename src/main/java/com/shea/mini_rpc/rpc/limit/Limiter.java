@@ -8,7 +8,11 @@ public interface Limiter {
 
     boolean tryAcquire();
 
-    void release();
+    default void release() {
+        release(1);
+    }
+
+    void release(int permits);
 
     // 并发限流：当前服务器最多能承受多少个并发请求
     // 速率限流：一定时间内可以承受的并发请求 100QPS 防止流量激增
