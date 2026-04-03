@@ -17,7 +17,9 @@ public class ConsumerProperties {
     private Integer methodTimeoutMs = 10000;
     private String loadBalancePolicy = "robin";
     private String retryPolicy = "forking";
-    private int rpcPerSecond = 10;
-    private int rpcPerChannel = 5;
+    private int rpcPerSecond = 100;
+    private int rpcPerChannel = 50;
+    private double slowRequestBreakRatio = 0.5;
+    private long slowRequestMs = 1000;
     private RegistryConfig registryConfig = new RegistryConfig();
 }
