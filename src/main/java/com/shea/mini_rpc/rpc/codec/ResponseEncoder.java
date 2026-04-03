@@ -10,11 +10,30 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import java.nio.charset.StandardCharsets;
 
 /**
- * @author : Shea.
- * @description: TODO
- * @since : 2026/3/23 14:26
+ * RPC 响应编码器
+ * <p>
+ * 将 Response 对象编码为 ByteBuf，用于网络传输
+ * 编码格式：长度 (4 字节) + 魔数 + 消息类型 (1 字节) + 消息体
+ * </p>
+ * @author Shea.
+ * @version 1.0
+ * @since 2026/3/23 14:26
  */
 public class ResponseEncoder extends MessageToByteEncoder<Response> {
+    /**
+     * 编码 Response 对象为 ByteBuf
+     * <p>
+     * 编码格式：
+     * - 长度 (4 字节): 整个消息的总长度
+     * - 魔数：用于验证协议合法性
+     * - 消息类型 (1 字节): 标识为响应消息
+     * - 消息体：序列化后的响应数据
+     * </p>
+     * @param ctx Channel 处理上下文
+     * @param response 待编码的响应对象
+     * @param byteBuf Netty 字节缓冲区
+     * @throws Exception 编码异常
+     */
     @Override
     protected void encode(ChannelHandlerContext ctx, Response response, ByteBuf byteBuf) throws Exception {
         // length
@@ -31,6 +50,11 @@ public class ResponseEncoder extends MessageToByteEncoder<Response> {
         byteBuf.writeBytes(body);
     }
 
+    /**
+     * 将 Response 对象序列化为 JSON 字节数组
+     * @param response 响应对象
+     * @return 序列化后的字节数组
+     */
     private byte[] serializeResponse(Response response) {
         return JSONObject.toJSONString(response).getBytes(StandardCharsets.UTF_8);
     }

@@ -8,6 +8,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
+ * 响应时间熔断器
  * @author : Shea.
  * @since : 2026/4/3 19:25
  */
@@ -51,7 +52,7 @@ public class ResponseTimeCircuitBreaker implements CircuitBreaker {
     @Override
     public void recordRpc(RpcCallMetrics metrics) {
         long now = System.currentTimeMillis();
-        sliceWindowIfNecessary(now);
+        slideWindowIfNecessary(now);
         Slot slot = slots[currentIndex];
         boolean slowRequest = !metrics.isComplete() || metrics.getDuration() > slowRequestMs;
         switch (stateReference.get()) {
@@ -97,7 +98,7 @@ public class ResponseTimeCircuitBreaker implements CircuitBreaker {
 
     }
 
-    private void sliceWindowIfNecessary(long now) {
+    private void slideWindowIfNecessary(long now) {
         if (now - currentTime < slotMs) {
             return;
         }

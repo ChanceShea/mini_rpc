@@ -15,24 +15,59 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * @author : Shea.
- * @description: TODO
- * @since : 2026/3/23 20:07
+ * 连接管理器
+ * <p>
+ * 负责管理 Consumer 与 Provider 之间的网络连接
+ * 维护连接池，支持连接的创建、复用和清理
+ * </p>
+ * @author Shea.
+ * @version 1.0
+ * @since 2026/3/23 20:07
  */
 @Slf4j
 public class ConnectionManager {
 
+    /**
+     * 连接通道表，key 为"host:port"格式
+     * 用于缓存已建立的连接，避免重复创建
+     */
     private final Map<String,ChannelWrapper> channelTable = new ConcurrentHashMap<>();
+    
+    /**
+     * Netty Bootstrap，用于创建客户端连接
+     */
     private final Bootstrap bootstrap;
+    
+    /**
+     * 飞行中请求管理器，管理尚未收到响应的请求
+     */
     private final InFlightRequestManager inFlightRequestManager;
+    
+    /**
+     * Consumer 配置信息
+     */
     private final ConsumerProperties properties;
 
+    /**
+     * 构造函数，初始化连接管理器
+     * @param inFlightRequestManager 飞行中请求管理器
+     * @param properties Consumer 配置信息
+     */
     public ConnectionManager(InFlightRequestManager inFlightRequestManager,ConsumerProperties properties) {
         this.inFlightRequestManager = inFlightRequestManager;
         this.bootstrap = createBootstrap(properties);
         this.properties = properties;
     }
 
+    /**
+     * 获取与指定服务提供者的连接通道
+     * <p>
+     * 1. 如果连接已存在且有效，则复用
+     * 2. 否则创建新连接并缓存
+     * </p>
+     * @param metadata 服务元数据信息
+     * @return 有效的连接通道，如果连接失败则返回 null
+     */
     public Channel getChannel(ServiceMetadata metadata) {
         int port = metadata.getPort();
         String host = metadata.getHost();
@@ -59,6 +94,14 @@ public class ConnectionManager {
         return channel;
     }
 
+    /**
+     * 创建 Netty Bootstrap 配置
+     * <p>
+     * 配置事件循环组、连接超时、Channel 处理器等
+     * </p>
+     * @param properties Consumer 配置信息
+     * @return 配置好的 Bootstrap 对象
+     */
     private Bootstrap createBootstrap(ConsumerProperties properties) {
         Bootstrap bootstrap = new Bootstrap()
                 .group(new NioEventLoopGroup(properties.getWorkThreadNum()))
