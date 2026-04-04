@@ -1,5 +1,6 @@
 package com.shea.mini_rpc.rpc.metrics;
 
+import com.shea.mini_rpc.rpc.message.Response;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
 import lombok.Data;
 
@@ -19,6 +20,7 @@ public class RpcCallMetrics {
     private Method method;
     private ServiceMetadata provider;
     private Object[] params;
+    private Object result;
 
     private RpcCallMetrics() {
 
@@ -33,9 +35,10 @@ public class RpcCallMetrics {
         return metrics;
     }
 
-    public void complete() {
+    public void complete(Response response) {
         this.complete = true;
         this.duration = System.currentTimeMillis() - startTime;
+        this.result = response.getResult();
     }
 
     public void errorComplete(Throwable throwable) {

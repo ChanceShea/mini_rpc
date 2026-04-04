@@ -1,5 +1,7 @@
 package com.shea.mini_rpc.rpc.api;
 
+import com.shea.mini_rpc.rpc.fallback.RpcFallback;
+
 /**
  * RPC 服务接口示例 - 加法服务
  * <p>
@@ -9,6 +11,7 @@ package com.shea.mini_rpc.rpc.api;
  * @version 1.0
  * @since 2026/3/23 15:35
  */
+@RpcFallback(ConsumerAddImpl.class)
 public interface Add {
     int add(int a, int b);
 

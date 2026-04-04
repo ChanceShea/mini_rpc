@@ -3,6 +3,10 @@ package com.shea.mini_rpc.rpc.consumer;
 import com.shea.mini_rpc.rpc.breaker.CircuitBreaker;
 import com.shea.mini_rpc.rpc.breaker.CircuitBreakerManager;
 import com.shea.mini_rpc.rpc.exception.RpcException;
+import com.shea.mini_rpc.rpc.fallback.CacheFallback;
+import com.shea.mini_rpc.rpc.fallback.DefaultFallback;
+import com.shea.mini_rpc.rpc.fallback.Fallback;
+import com.shea.mini_rpc.rpc.fallback.MockFallback;
 import com.shea.mini_rpc.rpc.loadbalance.LoadBalancer;
 import com.shea.mini_rpc.rpc.loadbalance.RandomLoadBalancer;
 import com.shea.mini_rpc.rpc.loadbalance.RoundRobinLoadBalancer;
@@ -39,6 +43,7 @@ public class ConsumerProxyFactory {
     private final ConsumerProperties properties;
     private final InFlightRequestManager inFlightRequestManager;
     private final CircuitBreakerManager circuitBreakerManager;
+    private final Fallback fallback;
 
     public ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
         this.properties = properties;
@@ -47,6 +52,7 @@ public class ConsumerProxyFactory {
         this.inFlightRequestManager = new InFlightRequestManager(properties);
         this.connectionManager = new ConnectionManager(inFlightRequestManager, properties);
         this.circuitBreakerManager = new CircuitBreakerManager(properties);
+        this.fallback = new DefaultFallback(new CacheFallback(),new MockFallback());
     }
 
     @SuppressWarnings("unchecked")
@@ -93,21 +99,31 @@ public class ConsumerProxyFactory {
             }
             List<ServiceMetadata> serviceMetadata = new ArrayList<>(register.fetchServiceList(interfaceClass.getName()));
             ServiceMetadata provider = decideProvider(serviceMetadata);
-            Request request = buildRequest(method, args);
-            Response response;
             RpcCallMetrics metrics = RpcCallMetrics.createRpcCallMetrics(method, provider, args);
+            if (provider == null) {
+                // 降级策略
+                return fallback.fallback(metrics);
+            }
+            Request request = buildRequest(method, args);
             CircuitBreaker breaker = circuitBreakerManager.createOrGetBreaker(provider);
             try {
                 CompletableFuture<Response> requestFuture = callRpcAsync(request, provider);
-                response = requestFuture.get(properties.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
-                metrics.complete();
+                Response response = requestFuture.get(properties.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
+                metrics.complete(response);
                 breaker.recordRpc(metrics);
+                fallback.recordMetrics(metrics);
+                return processResponse(response);
             } catch (Exception e) {
                 metrics.errorComplete(e);
                 breaker.recordRpc(metrics);
-                response = doRetry(metrics, serviceMetadata);
             }
-            return processResponse(response);
+            try {
+                return processResponse(doRetry(metrics, serviceMetadata));
+            } catch (Exception e) {
+                // 降级
+                return fallback.fallback(metrics);
+            }
+
         }
 
         private ServiceMetadata decideProvider(List<ServiceMetadata> candidate) {
@@ -119,7 +135,7 @@ public class ConsumerProxyFactory {
                 }
                 candidate.remove(select);
             }
-            throw new RpcException("当前没有可以提供服务的provider");
+            return null;
         }
 
         private Response doRetry(RpcCallMetrics metrics, List<ServiceMetadata> serviceMetadata) throws Exception {
@@ -154,7 +170,7 @@ public class ConsumerProxyFactory {
                 CompletableFuture<Response> requestFuture = callRpcAsync(buildRequest(metrics.getMethod(), metrics.getParams()), p);
                 requestFuture.whenComplete((r, retryE) -> {
                     if (retryE == null) {
-                        retryMetrics.complete();
+                        retryMetrics.complete(r);
                     } else {
                         retryMetrics.errorComplete(retryE);
                     }

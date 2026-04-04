@@ -3,8 +3,6 @@ package com.shea.mini_rpc.rpc.consumer;
 import com.shea.mini_rpc.rpc.api.Add;
 import com.shea.mini_rpc.rpc.register.RegistryConfig;
 
-import java.util.concurrent.CyclicBarrier;
-
 /**
  * RPC 服务消费者启动类
  * <p>
@@ -36,9 +34,8 @@ public class ConsumerApp {
         properties.setRpcPerChannel(10000);
         properties.setRpcPerSecond(10000);
         Add addConsumer = new ConsumerProxyFactory(properties).getConsumerProxy(Add.class);
-        CyclicBarrier barrier = new CyclicBarrier(10);
         while(true) {
-            Thread.sleep(300);
+            Thread.sleep(1000);
             System.out.println(addConsumer.add(1, 2));
         }
     }
