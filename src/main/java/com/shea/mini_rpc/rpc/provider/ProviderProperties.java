@@ -17,4 +17,6 @@ public class ProviderProperties {
     private int preConsumerMaxRequest = 5;
     private RegistryConfig registryConfig;
     private int workThreadNum = 4;
+    private String serializer = "hessian";
+    private String compress = "none";
 }

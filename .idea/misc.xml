@@ -3,6 +3,11 @@
   <component name="CodeInsightWorkspaceSettings">
     <option name="optimizeImportsOnTheFly" value="true" />
   </component>
+  <component name="EntryPointsManager">
+    <list size="1">
+      <item index="0" class="java.lang.String" itemvalue="lombok.Getter" />
+    </list>
+  </component>
   <component name="ExternalStorageConfigurationManager" enabled="true" />
   <component name="MavenProjectsManager">
     <option name="originalFiles">

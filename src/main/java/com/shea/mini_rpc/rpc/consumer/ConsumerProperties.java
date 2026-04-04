@@ -17,6 +17,8 @@ public class ConsumerProperties {
     private Integer methodTimeoutMs = 10000;
     private String loadBalancePolicy = "robin";
     private String retryPolicy = "forking";
+    private String serializer = "hessian";
+    private String compress = "none";
     private int rpcPerSecond = 100;
     private int rpcPerChannel = 50;
     private double slowRequestBreakRatio = 0.5;

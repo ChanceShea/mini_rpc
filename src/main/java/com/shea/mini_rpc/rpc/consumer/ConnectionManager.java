@@ -1,9 +1,13 @@
 package com.shea.mini_rpc.rpc.consumer;
 
-import com.shea.mini_rpc.rpc.codec.RequestEncoder;
 import com.shea.mini_rpc.rpc.codec.SheaDecoder;
+import com.shea.mini_rpc.rpc.codec.SheaEncoder;
+import com.shea.mini_rpc.rpc.compress.Compression;
+import com.shea.mini_rpc.rpc.compress.CompressionManager;
 import com.shea.mini_rpc.rpc.message.Response;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
+import com.shea.mini_rpc.rpc.serialize.Serializer;
+import com.shea.mini_rpc.rpc.serialize.SerializerManager;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -11,6 +15,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,15 +53,21 @@ public class ConnectionManager {
      */
     private final ConsumerProperties properties;
 
+    private final SerializerManager serializerManager;
+
+    private final CompressionManager compressionManager;
+
     /**
      * 构造函数，初始化连接管理器
      * @param inFlightRequestManager 飞行中请求管理器
      * @param properties Consumer 配置信息
      */
-    public ConnectionManager(InFlightRequestManager inFlightRequestManager,ConsumerProperties properties) {
+    public ConnectionManager(InFlightRequestManager inFlightRequestManager, ConsumerProperties properties) {
         this.inFlightRequestManager = inFlightRequestManager;
         this.bootstrap = createBootstrap(properties);
         this.properties = properties;
+        this.serializerManager = new SerializerManager();
+        this.compressionManager = new CompressionManager();
     }
 
     /**
@@ -112,7 +123,7 @@ public class ConnectionManager {
                     protected void initChannel(SocketChannel socketChannel) throws Exception {
                         socketChannel.pipeline()
                                 .addLast(new SheaDecoder())
-                                .addLast(new RequestEncoder())
+                                .addLast(new SheaEncoder())
                                 .addLast(new ConsumerHandler());
                     }
                 });
@@ -137,11 +148,19 @@ public class ConnectionManager {
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("address:{} connected", ctx.channel().remoteAddress());
+            Serializer.SerializerType serializerType = Serializer.SerializerType.valueOf(properties.getSerializer().toUpperCase(Locale.ROOT));
+            ctx.channel().attr(SheaEncoder.SERIALIZE_KEY).set(serializerType.getTypeCode());
+            ctx.channel().attr(SheaEncoder.SERIALIZER_MANAGER_KEY).set(serializerManager);
+            Compression.CompressionType compressionType = Compression.CompressionType.valueOf(properties.getCompress().toUpperCase(Locale.ROOT));
+            ctx.channel().attr(SheaEncoder.COMPRESS_KEY).set(compressionType.getType());
+            ctx.channel().attr(SheaEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
+            ctx.fireChannelActive();
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             log.info("address:{} disconnected", ctx.channel().remoteAddress());
+            ctx.fireChannelInactive();
         }
 
         @Override

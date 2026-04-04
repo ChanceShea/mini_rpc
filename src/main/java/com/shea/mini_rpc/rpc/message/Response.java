@@ -2,6 +2,8 @@ package com.shea.mini_rpc.rpc.message;
 
 import lombok.Data;
 
+import java.io.Serializable;
+
 /**
  * RPC 响应类
  * <p>
@@ -13,7 +15,7 @@ import lombok.Data;
  * @since 2026/3/22 21:00
  */
 @Data
-public class Response {
+public class Response implements Serializable {
 
 
     /**

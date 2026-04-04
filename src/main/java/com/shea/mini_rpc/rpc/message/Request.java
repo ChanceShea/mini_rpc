@@ -2,6 +2,7 @@ package com.shea.mini_rpc.rpc.message;
 
 import lombok.Data;
 
+import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @since 2026/3/22 21:00
  */
 @Data
-public class Request {
+public class Request implements Serializable {
 
     /**
      * 请求 ID 生成器，线程安全

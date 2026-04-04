@@ -1,8 +1,11 @@
 package com.shea.mini_rpc.rpc.message;
 
 import lombok.Data;
+import lombok.Getter;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * RPC 消息基类
@@ -34,6 +37,15 @@ public class Message {
      */
     private byte messageType;
 
+    private short version;
+
+    /**
+     * 前四位表示序列化算法
+     * 后四位表示压缩算法
+     * 同时最多可以支持16种序列化算法和压缩算法
+     */
+    private byte serializeAndCompress;
+
     /**
      * 消息体内容，承载实际的请求或响应数据
      */
@@ -45,32 +57,54 @@ public class Message {
      * 定义了 RPC 通信中的两种基本消息类型：请求和响应
      * </p>
      */
+    @Getter
     public enum MessageType {
         /**
          * 请求消息类型，代码值为 1
          */
-        REQUEST(1), 
+        REQUEST(1, Request.class),
         /**
          * 响应消息类型，代码值为 2
          */
-        RESPONSE(2);
+        RESPONSE(2, Response.class);
 
+        /**
+         * -- GETTER --
+         *  获取消息类型代码
+         *
+         * @return 消息类型代码
+         */
         private final byte code;
+        private final Class<?> messageClass;
+        private static final Map<Class<?>,MessageType> CLASS_CACHE = new HashMap<>();
+        private static final Map<Byte,MessageType> CODE_CACHE = new HashMap<>();
+
+        static {
+            for (MessageType value : values()) {
+                if (CLASS_CACHE.put(value.messageClass, value) != null) {
+                    throw new IllegalArgumentException(value + "没有唯一对应消息类");
+                }
+                if (CODE_CACHE.put(value.code,value) != null) {
+                    throw new IllegalArgumentException(value + "没有唯一对应消息类型代码");
+                }
+            }
+        }
         
         /**
          * 构造函数
          * @param code 消息类型代码
          */
-        MessageType(int code) {
+        MessageType(int code, Class<?> messageClass) {
             this.code = (byte)code;
+            this.messageClass = messageClass;
         }
 
-        /**
-         * 获取消息类型代码
-         * @return 消息类型代码
-         */
-        public byte getCode() {
-            return code;
+        public static MessageType ofClass(Class<?> messageClass) {
+            return CLASS_CACHE.get(messageClass);
+        }
+
+        public static MessageType ofCode(byte code) {
+            return CODE_CACHE.get(code);
         }
     }
 }

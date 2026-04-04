@@ -1,7 +1,9 @@
 package com.shea.mini_rpc.rpc.provider;
 
-import com.shea.mini_rpc.rpc.codec.ResponseEncoder;
 import com.shea.mini_rpc.rpc.codec.SheaDecoder;
+import com.shea.mini_rpc.rpc.codec.SheaEncoder;
+import com.shea.mini_rpc.rpc.compress.Compression;
+import com.shea.mini_rpc.rpc.compress.CompressionManager;
 import com.shea.mini_rpc.rpc.limit.ConcurrencyLimiter;
 import com.shea.mini_rpc.rpc.limit.Limiter;
 import com.shea.mini_rpc.rpc.limit.RateLimiter;
@@ -10,6 +12,8 @@ import com.shea.mini_rpc.rpc.message.Response;
 import com.shea.mini_rpc.rpc.register.DefaultServiceRegistry;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
 import com.shea.mini_rpc.rpc.register.ServiceRegistry;
+import com.shea.mini_rpc.rpc.serialize.Serializer;
+import com.shea.mini_rpc.rpc.serialize.SerializerManager;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -18,6 +22,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -63,6 +68,10 @@ public class ProviderServer {
      */
     private final Limiter globalLimiter;
 
+    private final SerializerManager serializerManager;
+
+    private final CompressionManager compressionManager;
+
     /**
      * 构造函数，初始化 Provider 服务器
      * @param properties Provider 配置信息
@@ -72,6 +81,8 @@ public class ProviderServer {
         this.serviceRegistry = new DefaultServiceRegistry();
         this.registry = new ProviderRegistry();
         this.globalLimiter = new ConcurrencyLimiter(properties.getGlobalMaxRequest());
+        this.serializerManager = new SerializerManager();
+        this.compressionManager = new CompressionManager();
     }
 
     /**
@@ -110,7 +121,7 @@ public class ProviderServer {
                         protected void initChannel(SocketChannel socketChannel) throws Exception {
                             socketChannel.pipeline()
                                     .addLast(new SheaDecoder())
-                                    .addLast(new ResponseEncoder())
+                                    .addLast(new SheaEncoder())
                                     .addLast(new LimitHandler())
                                     .addLast(new ProviderHandler());
                     // header --> SheaDecoder(Inbound) --> ResponseEncoder(Outbound)
@@ -232,6 +243,9 @@ public class ProviderServer {
             Limiter channelLimiter = new RateLimiter(properties.getPreConsumerMaxRequest());
             ctx.channel().attr(CHANNEL_LIMIT_KEY).set(channelLimiter);
             ctx.channel().attr(GLOBAL_PERMITS).set(new AtomicInteger(0));
+            Compression.CompressionType compressionType = Compression.CompressionType.valueOf(properties.getCompress().toUpperCase(Locale.ROOT));
+            ctx.channel().attr(SheaEncoder.COMPRESS_KEY).set(compressionType.getType());
+            ctx.channel().attr(SheaEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
             ctx.fireChannelActive();
         }
 
@@ -299,6 +313,10 @@ public class ProviderServer {
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("address:{} connected", ctx.channel().remoteAddress());
+            Serializer.SerializerType serializerType = Serializer.SerializerType.valueOf(properties.getSerializer().toUpperCase(Locale.ROOT));
+            ctx.channel().attr(SheaEncoder.SERIALIZE_KEY).set(serializerType.getTypeCode());
+            ctx.channel().attr(SheaEncoder.SERIALIZER_MANAGER_KEY).set(serializerManager);
+            ctx.fireChannelActive();
         }
 
         /**

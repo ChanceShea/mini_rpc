@@ -1,16 +1,18 @@
 package com.shea.mini_rpc.rpc.codec;
 
-import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONReader;
+import com.shea.mini_rpc.rpc.compress.Compression;
+import com.shea.mini_rpc.rpc.compress.CompressionManager;
 import com.shea.mini_rpc.rpc.message.Message;
-import com.shea.mini_rpc.rpc.message.Request;
-import com.shea.mini_rpc.rpc.message.Response;
+import com.shea.mini_rpc.rpc.serialize.Serializer;
+import com.shea.mini_rpc.rpc.serialize.SerializerManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 
 import java.util.Arrays;
-import java.util.Objects;
+
+import static com.shea.mini_rpc.rpc.codec.SheaEncoder.COMPRESS_MANAGER_KEY;
+import static com.shea.mini_rpc.rpc.codec.SheaEncoder.SERIALIZER_MANAGER_KEY;
 
 /**
  * RPC 协议解码器
@@ -23,6 +25,9 @@ import java.util.Objects;
  * @since 2026/3/22 20:22
  */
 public class SheaDecoder extends LengthFieldBasedFrameDecoder {
+
+    private volatile SerializerManager serializerManager;
+    private volatile CompressionManager compressionManager;
 
     /**
      * 构造函数，配置 LengthFieldBasedFrameDecoder 参数
@@ -53,6 +58,8 @@ public class SheaDecoder extends LengthFieldBasedFrameDecoder {
      */
     @Override
     protected Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
+        initIfNecessary(ctx);
+
         /**
          * 因为 netty 中的 ByteBuf 不会出现循环引用的问题，所以可以直接使用引用计数法进行 jvm 的 gc
          * 通常情况下，ByteBuf 是在 pipeline 的头节点被创建，经过了一系列的 handler，然后到尾节点被回收
@@ -69,35 +76,34 @@ public class SheaDecoder extends LengthFieldBasedFrameDecoder {
                 throw new IllegalArgumentException("魔数不对，协议有问题");
             }
             byte messageType = frame.readByte();
+            short version = frame.readShort();
+            byte serializeAndCompress = frame.readByte();
+            Compression compression = this.compressionManager.getCompression(serializeAndCompress & 0b00001111);
+            if (compression == null) {
+                throw new IllegalArgumentException("没有支持的压缩器");
+            }
+            Serializer serializer = this.serializerManager.getSerializer((serializeAndCompress & 0b11110000) >>> 4);
+            if (serializer == null) {
+                throw new IllegalArgumentException("没有支持的反序列化器");
+            }
             byte[] body = new byte[frame.readableBytes()];
             frame.readBytes(body);
-            if(Objects.equals(Message.MessageType.REQUEST.getCode(),messageType)){
-                return deserializeRequest(body);
+            body = compression.decompress(body);
+            Message.MessageType type = Message.MessageType.ofCode(messageType);
+            if (type == null) {
+                throw new IllegalArgumentException("不支持的消息类型" + messageType);
             }
-            if(Objects.equals(Message.MessageType.RESPONSE.getCode(),messageType)){
-                return deserializeResponse(body);
-            }
-            throw new IllegalArgumentException("不支持的消息类型"+messageType);
+            return serializer.deserialize(body, type.getMessageClass());
         } finally {
             frame.release();
         }
     }
 
-    /**
-     * 反序列化响应消息
-     * @param body 响应消息体字节数组
-     * @return 响应对象
-     */
-    private Response deserializeResponse(byte[] body) {
-        return JSONObject.parseObject(new String(body),Response.class);
-    }
-
-    /**
-     * 反序列化请求消息
-     * @param body 请求消息体字节数组
-     * @return 请求对象
-     */
-    private Request deserializeRequest(byte[] body) {
-        return JSONObject.parseObject(new String(body),Request.class, JSONReader.Feature.SupportClassForName);
+    private void initIfNecessary(ChannelHandlerContext ctx) {
+        if (serializerManager != null) {
+            return;
+        }
+        serializerManager = ctx.channel().attr(SERIALIZER_MANAGER_KEY).get();
+        compressionManager = ctx.channel().attr(COMPRESS_MANAGER_KEY).get();
     }
 }
