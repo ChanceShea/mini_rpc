@@ -66,7 +66,10 @@ public class Message {
         /**
          * 响应消息类型，代码值为 2
          */
-        RESPONSE(2, Response.class);
+        RESPONSE(2, Response.class),
+
+        HEARTBEAT_REQUEST(3, HeartbeatRequest.class),
+        HEARTBEAT_RESPONSE(4, HeartbeatResponse.class);
 
         /**
          * -- GETTER --

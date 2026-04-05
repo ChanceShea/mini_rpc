@@ -4,6 +4,8 @@ import com.shea.mini_rpc.rpc.codec.SheaDecoder;
 import com.shea.mini_rpc.rpc.codec.SheaEncoder;
 import com.shea.mini_rpc.rpc.compress.Compression;
 import com.shea.mini_rpc.rpc.compress.CompressionManager;
+import com.shea.mini_rpc.rpc.handler.HeartbeatHandler;
+import com.shea.mini_rpc.rpc.handler.TrafficRecordHandler;
 import com.shea.mini_rpc.rpc.limit.ConcurrencyLimiter;
 import com.shea.mini_rpc.rpc.limit.Limiter;
 import com.shea.mini_rpc.rpc.limit.RateLimiter;
@@ -19,10 +21,12 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -120,8 +124,11 @@ public class ProviderServer {
                         @Override
                         protected void initChannel(SocketChannel socketChannel) throws Exception {
                             socketChannel.pipeline()
+                                    .addLast(new TrafficRecordHandler())
                                     .addLast(new SheaDecoder())
                                     .addLast(new SheaEncoder())
+                                    .addLast(new IdleStateHandler(30,5,0, TimeUnit.SECONDS))
+                                    .addLast(new HeartbeatHandler())
                                     .addLast(new LimitHandler())
                                     .addLast(new ProviderHandler());
                     // header --> SheaDecoder(Inbound) --> ResponseEncoder(Outbound)
