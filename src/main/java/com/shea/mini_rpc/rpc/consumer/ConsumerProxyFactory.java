@@ -109,10 +109,11 @@ public class ConsumerProxyFactory {
             try {
                 CompletableFuture<Response> requestFuture = callRpcAsync(request, provider);
                 Response response = requestFuture.get(properties.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
+                Object result = processResponse(response);
                 metrics.complete(response);
                 breaker.recordRpc(metrics);
                 fallback.recordMetrics(metrics);
-                return processResponse(response);
+                return result;
             } catch (Exception e) {
                 metrics.errorComplete(e);
                 breaker.recordRpc(metrics);

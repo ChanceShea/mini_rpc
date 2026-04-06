@@ -2,6 +2,9 @@ package com.shea.mini_rpc.rpc.provider;
 
 import com.shea.mini_rpc.rpc.api.Add;
 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+
 /**
  * @author : Shea.
  * @description: TODO
@@ -9,13 +12,13 @@ import com.shea.mini_rpc.rpc.api.Add;
  */
 public class AddImpl implements Add {
     @Override
-    public int add(int a, int b) {
-//        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1500));
+    public Integer add(int a, int b) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1500));
         return a + b;
     }
 
     @Override
-    public int minus(int a, int b) {
+    public Integer minus(int a, int b) {
         return a - b;
     }
 }

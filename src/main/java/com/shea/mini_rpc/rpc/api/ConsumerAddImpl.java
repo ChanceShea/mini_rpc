@@ -6,12 +6,12 @@ package com.shea.mini_rpc.rpc.api;
  */
 public class ConsumerAddImpl implements Add{
     @Override
-    public int add(int a, int b) {
+    public Integer add(int a, int b) {
         return 0;
     }
 
     @Override
-    public int minus(int a, int b) {
+    public Integer minus(int a, int b) {
         return 0;
     }
 }

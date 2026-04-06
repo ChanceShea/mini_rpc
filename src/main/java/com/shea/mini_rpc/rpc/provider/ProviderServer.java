@@ -26,6 +26,9 @@ import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Locale;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 负责启动 Netty 服务器，注册服务实例，处理 Consumer 的请求
  * 支持限流、服务注册与发现等功能
  * </p>
+ *
  * @author Shea.
  * @version 1.0
  * @since 2026/3/21 14:40
@@ -46,27 +50,27 @@ public class ProviderServer {
      * Netty Boss 事件循环组，负责接受客户端连接
      */
     private EventLoopGroup bossEventLoopGroup;
-    
+
     /**
      * Netty Worker 事件循环组，负责处理 I/O 操作
      */
     private EventLoopGroup workerEventLoopGroup;
-    
+
     /**
      * 服务注册表，维护服务接口与实现实例的映射关系
      */
     private final ProviderRegistry registry;
-    
+
     /**
      * 外部服务注册中心（如 ZooKeeper、Redis 等）
      */
     private final ServiceRegistry serviceRegistry;
-    
+
     /**
      * Provider 配置信息
      */
     private final ProviderProperties properties;
-    
+
     /**
      * 全局限流器，控制整个服务器的请求处理能力
      */
@@ -76,8 +80,11 @@ public class ProviderServer {
 
     private final CompressionManager compressionManager;
 
+    private ThreadPoolExecutor invokeExecutor;
+
     /**
      * 构造函数，初始化 Provider 服务器
+     *
      * @param properties Provider 配置信息
      */
     public ProviderServer(ProviderProperties properties) {
@@ -87,6 +94,13 @@ public class ProviderServer {
         this.globalLimiter = new ConcurrencyLimiter(properties.getGlobalMaxRequest());
         this.serializerManager = new SerializerManager();
         this.compressionManager = new CompressionManager();
+        this.invokeExecutor = new ThreadPoolExecutor(
+                4,
+                4,
+                10,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(1),
+                new FastFailResponseHandler());
     }
 
     /**
@@ -94,9 +108,10 @@ public class ProviderServer {
      * <p>
      * 将服务接口与实现实例绑定到本地注册表
      * </p>
-     * @param interfaceClass 服务接口类
+     *
+     * @param interfaceClass  服务接口类
      * @param serviceInstance 服务实现实例
-     * @param <I> 服务接口类型
+     * @param <I>             服务接口类型
      */
     public <I> void register(Class<I> interfaceClass, I serviceInstance) {
         registry.register(interfaceClass, serviceInstance);
@@ -127,11 +142,11 @@ public class ProviderServer {
                                     .addLast(new TrafficRecordHandler())
                                     .addLast(new SheaDecoder())
                                     .addLast(new SheaEncoder())
-                                    .addLast(new IdleStateHandler(30,5,0, TimeUnit.SECONDS))
+                                    .addLast(new IdleStateHandler(30, 5, 0, TimeUnit.SECONDS))
                                     .addLast(new HeartbeatHandler())
                                     .addLast(new LimitHandler())
                                     .addLast(new ProviderHandler());
-                    // header --> SheaDecoder(Inbound) --> ResponseEncoder(Outbound)
+                            // header --> SheaDecoder(Inbound) --> ResponseEncoder(Outbound)
                             // --> LimiterHandler(Inbound/Outbound) --> ProviderHandler(Inbound) --> tail
                         }
                     });
@@ -150,6 +165,7 @@ public class ProviderServer {
      * <p>
      * 将服务名称、主机地址、端口等信息封装为 ServiceMetadata
      * </p>
+     *
      * @param serviceName 服务名称
      * @return 服务元数据对象
      */
@@ -176,12 +192,12 @@ public class ProviderServer {
          * 通道限流器属性键，用于存储每个连接的独立限流器
          */
         private static final AttributeKey<Limiter> CHANNEL_LIMIT_KEY = AttributeKey.valueOf("channel_limit_key");
-        
+
         /**
          * 全局许可计数器属性键，跟踪当前通道已使用的许可数
          */
         private static final AttributeKey<AtomicInteger> GLOBAL_PERMITS = AttributeKey.valueOf("global_permits");
-        
+
         /**
          * 处理入站请求（Consumer 发起的 RPC 调用）
          * <p>
@@ -190,6 +206,7 @@ public class ProviderServer {
          * 2. 再尝试获取通道级别的许可
          * 3. 都成功后才将请求向下传递
          * </p>
+         *
          * @param ctx Channel 处理上下文
          * @param msg 消息对象
          * @throws Exception 处理异常
@@ -197,14 +214,14 @@ public class ProviderServer {
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             Request request = (Request) msg;
-            if(!globalLimiter.tryAcquire()) {
-                ctx.writeAndFlush(Response.fail("provider 限流",request.getRequestId()));
+            if (!globalLimiter.tryAcquire()) {
+                ctx.writeAndFlush(Response.fail("provider 限流", request.getRequestId()));
                 return;
             }
             Limiter channelLimiter = ctx.channel().attr(CHANNEL_LIMIT_KEY).get();
-            if(!channelLimiter.tryAcquire()) {
+            if (!channelLimiter.tryAcquire()) {
                 globalLimiter.release();
-                ctx.writeAndFlush(Response.fail("provider 限流",request.getRequestId()));
+                ctx.writeAndFlush(Response.fail("provider 限流", request.getRequestId()));
                 return;
             }
             ctx.channel().attr(GLOBAL_PERMITS).get().incrementAndGet();
@@ -217,8 +234,9 @@ public class ProviderServer {
          * <p>
          * 在响应成功返回后，释放之前占用的限流许可
          * </p>
-         * @param ctx Channel 处理上下文
-         * @param msg 响应消息
+         *
+         * @param ctx     Channel 处理上下文
+         * @param msg     响应消息
          * @param promise Netty 异步操作结果回调
          * @throws Exception 处理异常
          */
@@ -228,7 +246,7 @@ public class ProviderServer {
             // promise 是一个 future，对其进行监听，返回结果时会触发 release 来释放许可
             promise.addListener(f -> {
                 int remain = ctx.channel().attr(GLOBAL_PERMITS).get().getAndDecrement();
-                if(remain > 0) {
+                if (remain > 0) {
                     ctx.channel().attr(CHANNEL_LIMIT_KEY).get().release();
                     globalLimiter.release();
                 }
@@ -242,6 +260,7 @@ public class ProviderServer {
          * <p>
          * 为每个新连接创建独立的限流器和许可计数器
          * </p>
+         *
          * @param ctx Channel 处理上下文
          * @throws Exception 初始化异常
          */
@@ -261,6 +280,7 @@ public class ProviderServer {
          * <p>
          * 释放该通道占用的所有全局许可
          * </p>
+         *
          * @param ctx Channel 处理上下文
          * @throws Exception 清理异常
          */
@@ -286,7 +306,8 @@ public class ProviderServer {
          * 2. 反射调用指定方法
          * 3. 返回执行结果或错误信息
          * </p>
-         * @param ctx Channel 处理上下文
+         *
+         * @param ctx     Channel 处理上下文
          * @param request RPC 请求对象
          * @throws Exception 处理异常
          */
@@ -300,20 +321,12 @@ public class ProviderServer {
                 ctx.writeAndFlush(fail);
                 return;
             }
-            try {
-                long start = System.currentTimeMillis();
-                Object result = instance.invoke(request.getMethodName(), request.getParamsClass(), request.getParams());
-                log.info("requestId: {},{},函数调用了{},结果是{},耗时是{}", request.getRequestId(), request.getServiceName(), request.getMethodName(), result, System.currentTimeMillis() - start);
-                Response success = Response.success(result, request.getRequestId());
-                ctx.writeAndFlush(success);
-            } catch (Exception e) {
-                Response fail = Response.fail(e.getMessage(), request.getRequestId());
-                ctx.writeAndFlush(fail);
-            }
+            invokeExecutor.execute(new InvokeTask(request,ctx,instance));
         }
 
         /**
          * 通道连接成功回调
+         *
          * @param ctx Channel 处理上下文
          * @throws Exception 回调异常
          */
@@ -328,6 +341,7 @@ public class ProviderServer {
 
         /**
          * 通道断开连接回调
+         *
          * @param ctx Channel 处理上下文
          * @throws Exception 回调异常
          */
@@ -341,7 +355,8 @@ public class ProviderServer {
          * <p>
          * 记录异常日志并关闭连接
          * </p>
-         * @param ctx Channel 处理上下文
+         *
+         * @param ctx   Channel 处理上下文
          * @param cause 异常原因
          * @throws Exception 处理异常
          */
@@ -349,6 +364,48 @@ public class ProviderServer {
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             log.error("catch exception", cause);
             ctx.channel().close();
+        }
+    }
+
+    private static class FastFailResponseHandler implements RejectedExecutionHandler {
+        @Override
+        public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+            if (r instanceof InvokeTask invokeTask) {
+                Response fastFail = Response.fail("服务提供者忙", invokeTask.request.getRequestId());
+                invokeTask.ctx.writeAndFlush(fastFail);
+                return;
+            }
+            throw new RuntimeException("task有问题");
+        }
+    }
+
+    private class InvokeTask implements Runnable {
+
+        private final Request request;
+        private final ChannelHandlerContext ctx;
+        private final ProviderRegistry.Invocation<?> instance;
+
+        public InvokeTask(Request request,ChannelHandlerContext ctx,ProviderRegistry.Invocation<?> invocation) {
+            this.request = request;
+            this.ctx = ctx;
+            this.instance = invocation;
+        }
+        @Override
+        public void run() {
+            EventLoop eventLoop = ctx.channel().eventLoop();
+            try {
+                long start = System.currentTimeMillis();
+                Object result = instance.invoke(request.getMethodName(), request.getParamsClass(), request.getParams());
+                log.info("requestId: {},{},函数调用了{},结果是{},耗时是{}",
+                        request.getRequestId(),
+                        request.getServiceName(),
+                        request.getMethodName(),
+                        result,
+                        System.currentTimeMillis() - start);
+                eventLoop.execute(() -> ctx.writeAndFlush(Response.success(result, request.getRequestId())));
+            } catch (Exception e) {
+                eventLoop.execute(() -> ctx.writeAndFlush(Response.fail(e.getMessage(), request.getRequestId())));
+            }
         }
     }
 

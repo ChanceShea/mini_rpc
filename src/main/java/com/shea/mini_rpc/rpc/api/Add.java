@@ -13,7 +13,7 @@ import com.shea.mini_rpc.rpc.fallback.RpcFallback;
  */
 @RpcFallback(ConsumerAddImpl.class)
 public interface Add {
-    int add(int a, int b);
+    Integer add(int a, int b);
 
-    int minus(int a, int b);
+    Integer minus(int a, int b);
 }
