@@ -8,15 +8,16 @@ import com.shea.mini_rpc.rpc.fallback.DefaultFallback;
 import com.shea.mini_rpc.rpc.fallback.Fallback;
 import com.shea.mini_rpc.rpc.fallback.MockFallback;
 import com.shea.mini_rpc.rpc.loadbalance.LoadBalancer;
-import com.shea.mini_rpc.rpc.loadbalance.RandomLoadBalancer;
-import com.shea.mini_rpc.rpc.loadbalance.RoundRobinLoadBalancer;
+import com.shea.mini_rpc.rpc.loadbalance.LoadBalancerManager;
 import com.shea.mini_rpc.rpc.message.Request;
 import com.shea.mini_rpc.rpc.message.Response;
 import com.shea.mini_rpc.rpc.metrics.RpcCallMetrics;
 import com.shea.mini_rpc.rpc.register.DefaultServiceRegistry;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
 import com.shea.mini_rpc.rpc.register.ServiceRegistry;
-import com.shea.mini_rpc.rpc.retry.*;
+import com.shea.mini_rpc.rpc.retry.RetryContext;
+import com.shea.mini_rpc.rpc.retry.RetryPolicy;
+import com.shea.mini_rpc.rpc.retry.RetryPolicyManager;
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,45 +40,44 @@ import java.util.concurrent.TimeoutException;
 public class ConsumerProxyFactory {
 
     ConnectionManager connectionManager;
-    private final ServiceRegistry register;
+    private final ServiceRegistry registry;
     private final ConsumerProperties properties;
     private final InFlightRequestManager inFlightRequestManager;
     private final CircuitBreakerManager circuitBreakerManager;
     private final Fallback fallback;
+    private final RetryPolicyManager retryPolicyManager;
+    private final LoadBalancerManager loadBalancerManager;
 
     public ConsumerProxyFactory(ConsumerProperties properties) throws Exception {
         this.properties = properties;
-        this.register = new DefaultServiceRegistry();
-        this.register.init(properties.getRegistryConfig());
+        this.registry = new DefaultServiceRegistry();
+        this.registry.init(properties.getRegistryConfig());
         this.inFlightRequestManager = new InFlightRequestManager(properties);
         this.connectionManager = new ConnectionManager(inFlightRequestManager, properties);
         this.circuitBreakerManager = new CircuitBreakerManager(properties);
         this.fallback = new DefaultFallback(new CacheFallback(),new MockFallback());
+        this.retryPolicyManager = new RetryPolicyManager();
+        this.loadBalancerManager = new LoadBalancerManager();
     }
 
     @SuppressWarnings("unchecked")
     public <I> I getConsumerProxy(Class<I> interfaceClass) {
         return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(),
                 new Class[]{interfaceClass},
-                new ConsumerInvocationHandler(interfaceClass, createLoadBalancer(), createRetryPolicy())
+                new ConsumerInvocationHandler(interfaceClass, createLoadBalancer(properties.getLoadBalancer()), createRetryPolicy(properties.getRetryPolicy()))
         );
     }
 
-    private RetryPolicy createRetryPolicy() {
-        return switch (this.properties.getRetryPolicy()) {
-            case "retrysame" -> new RetrySameRetryPolicy();
-            case "failover" -> new FailOverRetryPolicy();
-            case "forking" -> new ForkingRetryPolicy();
-            default -> throw new IllegalArgumentException("没有这个重试策略 " + properties.getRetryPolicy());
-        };
+    private RetryPolicy createRetryPolicy(String name) {
+        RetryPolicy retryPolicy = retryPolicyManager.getRetryPolicy(name);
+        if (retryPolicy == null) {
+            throw new IllegalArgumentException("没有这个重试策略 " + name);
+        }
+        return retryPolicy;
     }
 
-    private LoadBalancer createLoadBalancer() {
-        return switch (this.properties.getLoadBalancePolicy()) {
-            case "robin" -> new RoundRobinLoadBalancer();
-            case "random" -> new RandomLoadBalancer();
-            default -> throw new IllegalArgumentException(this.properties.getLoadBalancePolicy() + "负载均衡未实现");
-        };
+    private LoadBalancer createLoadBalancer(String name) {
+        return loadBalancerManager.getLoadBalancer(name);
     }
 
     public class ConsumerInvocationHandler implements InvocationHandler {
@@ -97,7 +97,7 @@ public class ConsumerProxyFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
-            List<ServiceMetadata> serviceMetadata = new ArrayList<>(register.fetchServiceList(interfaceClass.getName()));
+            List<ServiceMetadata> serviceMetadata = new ArrayList<>(registry.fetchServiceList(interfaceClass.getName()));
             ServiceMetadata provider = decideProvider(serviceMetadata);
             RpcCallMetrics metrics = RpcCallMetrics.createRpcCallMetrics(method, provider, args);
             if (provider == null) {

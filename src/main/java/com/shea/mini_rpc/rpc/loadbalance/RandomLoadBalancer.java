@@ -1,6 +1,7 @@
 package com.shea.mini_rpc.rpc.loadbalance;
 
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
+import com.shea.mini_rpc.rpc.spi.Spi;
 
 import java.util.List;
 import java.util.Random;
@@ -10,6 +11,7 @@ import java.util.Random;
  * @description: TODO
  * @since : 2026/3/26 19:54
  */
+@Spi("random")
 public class RandomLoadBalancer implements LoadBalancer {
 
     private Random random = new Random();

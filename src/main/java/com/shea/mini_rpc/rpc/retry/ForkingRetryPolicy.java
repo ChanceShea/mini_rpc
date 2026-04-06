@@ -3,6 +3,7 @@ package com.shea.mini_rpc.rpc.retry;
 import com.shea.mini_rpc.rpc.exception.RpcException;
 import com.shea.mini_rpc.rpc.message.Response;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
+import com.shea.mini_rpc.rpc.spi.Spi;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeUnit;
  * @since : 2026/3/31 21:39
  */
 @Slf4j
+@Spi("forking")
 public class ForkingRetryPolicy implements RetryPolicy{
     @Override
     public Response retry(RetryContext context) throws Exception {

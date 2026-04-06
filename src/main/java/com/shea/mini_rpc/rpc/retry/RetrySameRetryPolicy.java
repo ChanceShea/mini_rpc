@@ -2,6 +2,7 @@ package com.shea.mini_rpc.rpc.retry;
 
 import com.shea.mini_rpc.rpc.exception.RpcException;
 import com.shea.mini_rpc.rpc.message.Response;
+import com.shea.mini_rpc.rpc.spi.Spi;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Random;
@@ -15,6 +16,7 @@ import java.util.concurrent.TimeoutException;
  * @since : 2026/3/31 20:01
  */
 @Slf4j
+@Spi("retrySame")
 public class RetrySameRetryPolicy implements RetryPolicy{
 
     private int retryMax = 3;

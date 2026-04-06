@@ -3,9 +3,6 @@ package com.shea.mini_rpc.rpc.consumer;
 import com.shea.mini_rpc.rpc.api.Add;
 import com.shea.mini_rpc.rpc.register.RegistryConfig;
 
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
-
 /**
  * RPC 服务消费者启动类
  * <p>
@@ -37,18 +34,18 @@ public class ConsumerApp {
         properties.setRpcPerChannel(10000);
         properties.setRpcPerSecond(10000);
         Add addConsumer = new ConsumerProxyFactory(properties).getConsumerProxy(Add.class);
-        for (int i = 0; i < 10; i++) {
-            new Thread(() -> {
-                while (true) {
-                    LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
-                    long startTime = System.currentTimeMillis();
-                    System.out.println(addConsumer.add(1, 2) + "  " + (System.currentTimeMillis() - startTime) + "ms");
-                }
-            }).start();
-        }
-//        while(true) {
-//            Thread.sleep(1000);
-//            System.out.println(addConsumer.add(1, 2));
+//        for (int i = 0; i < 10; i++) {
+//            new Thread(() -> {
+//                while (true) {
+//                    LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
+//                    long startTime = System.currentTimeMillis();
+//                    System.out.println(addConsumer.add(1, 2) + "  " + (System.currentTimeMillis() - startTime) + "ms");
+//                }
+//            }).start();
 //        }
+        while(true) {
+            Thread.sleep(1000);
+            System.out.println(addConsumer.add(1, 2));
+        }
     }
 }

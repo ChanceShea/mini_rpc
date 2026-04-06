@@ -2,7 +2,6 @@ package com.shea.mini_rpc.rpc.provider;
 
 import com.shea.mini_rpc.rpc.codec.SheaDecoder;
 import com.shea.mini_rpc.rpc.codec.SheaEncoder;
-import com.shea.mini_rpc.rpc.compress.Compression;
 import com.shea.mini_rpc.rpc.compress.CompressionManager;
 import com.shea.mini_rpc.rpc.handler.HeartbeatHandler;
 import com.shea.mini_rpc.rpc.handler.TrafficRecordHandler;
@@ -14,7 +13,6 @@ import com.shea.mini_rpc.rpc.message.Response;
 import com.shea.mini_rpc.rpc.register.DefaultServiceRegistry;
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
 import com.shea.mini_rpc.rpc.register.ServiceRegistry;
-import com.shea.mini_rpc.rpc.serialize.Serializer;
 import com.shea.mini_rpc.rpc.serialize.SerializerManager;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -25,7 +23,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -269,9 +266,6 @@ public class ProviderServer {
             Limiter channelLimiter = new RateLimiter(properties.getPreConsumerMaxRequest());
             ctx.channel().attr(CHANNEL_LIMIT_KEY).set(channelLimiter);
             ctx.channel().attr(GLOBAL_PERMITS).set(new AtomicInteger(0));
-            Compression.CompressionType compressionType = Compression.CompressionType.valueOf(properties.getCompress().toUpperCase(Locale.ROOT));
-            ctx.channel().attr(SheaEncoder.COMPRESS_KEY).set(compressionType.getType());
-            ctx.channel().attr(SheaEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
             ctx.fireChannelActive();
         }
 
@@ -333,9 +327,10 @@ public class ProviderServer {
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("address:{} connected", ctx.channel().remoteAddress());
-            Serializer.SerializerType serializerType = Serializer.SerializerType.valueOf(properties.getSerializer().toUpperCase(Locale.ROOT));
-            ctx.channel().attr(SheaEncoder.SERIALIZE_KEY).set(serializerType.getTypeCode());
+            ctx.channel().attr(SheaEncoder.SERIALIZE_KEY).set(properties.getSerializer());
             ctx.channel().attr(SheaEncoder.SERIALIZER_MANAGER_KEY).set(serializerManager);
+            ctx.channel().attr(SheaEncoder.COMPRESS_KEY).set(properties.getCompress());
+            ctx.channel().attr(SheaEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
             ctx.fireChannelActive();
         }
 

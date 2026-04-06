@@ -1,0 +1,2 @@
+com.shea.mini_rpc.rpc.serialize.JsonSerializer
+com.shea.mini_rpc.rpc.serialize.HessianSerializer

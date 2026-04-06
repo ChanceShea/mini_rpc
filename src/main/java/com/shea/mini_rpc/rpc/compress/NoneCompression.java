@@ -14,4 +14,14 @@ public class NoneCompression implements Compression{
     public byte[] decompress(byte[] bytes) {
         return bytes;
     }
+
+    @Override
+    public int code() {
+        return 0;
+    }
+
+    @Override
+    public String name() {
+        return "none";
+    }
 }

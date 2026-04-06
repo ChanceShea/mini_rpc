@@ -15,7 +15,7 @@ public class ConsumerProperties {
     private Integer connectTimeoutMs = 3000;
     private Integer requestTimeoutMs = 3000;
     private Integer methodTimeoutMs = 10000;
-    private String loadBalancePolicy = "robin";
+    private String loadBalancer = "robin";
     private String retryPolicy = "forking";
     private String serializer = "hessian";
     private String compress = "none";

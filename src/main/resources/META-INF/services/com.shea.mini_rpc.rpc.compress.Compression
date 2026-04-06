@@ -1,0 +1,2 @@
+com.shea.mini_rpc.rpc.compress.NoneCompression
+com.shea.mini_rpc.rpc.compress.GzipCompression

@@ -19,9 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class SheaEncoder extends MessageToByteEncoder<Object> {
 
-    public static final AttributeKey<Integer> SERIALIZE_KEY = AttributeKey.valueOf("serialize");
+    public static final AttributeKey<String> SERIALIZE_KEY = AttributeKey.valueOf("serialize");
     public static final AttributeKey<SerializerManager> SERIALIZER_MANAGER_KEY = AttributeKey.valueOf("serializerManagerKey");
-    public static final AttributeKey<Integer> COMPRESS_KEY = AttributeKey.valueOf("compressKey");
+    public static final AttributeKey<String> COMPRESS_KEY = AttributeKey.valueOf("compressKey");
     public static final AttributeKey<CompressionManager> COMPRESS_MANAGER_KEY = AttributeKey.valueOf("compressManagerKey");
 
     private volatile Serializer defaultSerializer;
@@ -66,13 +66,13 @@ public class SheaEncoder extends MessageToByteEncoder<Object> {
         if (defaultSerializer != null) {
             return;
         }
-        Integer serializeCode = ctx.channel().attr(SERIALIZE_KEY).get();
+        String serializeName = ctx.channel().attr(SERIALIZE_KEY).get();
         SerializerManager serializerManager = ctx.channel().attr(SERIALIZER_MANAGER_KEY).get();
-        defaultSerializer = serializerManager.getSerializer(serializeCode);
+        defaultSerializer = serializerManager.getSerializer(serializeName);
 
-        Integer compressCode = ctx.channel().attr(COMPRESS_KEY).get();
+        String compressName = ctx.channel().attr(COMPRESS_KEY).get();
         CompressionManager compressManager = ctx.channel().attr(COMPRESS_MANAGER_KEY).get();
-        defaultCompression = compressManager.getCompression(compressCode);
+        defaultCompression = compressManager.getCompression(compressName);
 
         if (defaultSerializer == null) {
             throw new IllegalArgumentException("不存在默认的序列化器");
@@ -82,6 +82,6 @@ public class SheaEncoder extends MessageToByteEncoder<Object> {
             throw new IllegalArgumentException("不存在默认的压缩器");
         }
 
-        defaultSerializerAndCompress = (byte) ((serializeCode << 4) | compressCode);
+        defaultSerializerAndCompress = (byte) ((defaultSerializer.code() << 4) | defaultCompression.code());
     }
 }
