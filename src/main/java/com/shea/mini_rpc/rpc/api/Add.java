@@ -16,4 +16,6 @@ public interface Add {
     Integer add(int a, int b);
 
     Integer minus(int a, int b);
+
+    User merge(User user1, User user2);
 }

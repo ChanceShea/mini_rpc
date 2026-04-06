@@ -55,7 +55,7 @@ public class ConsumerProxyFactory {
         this.inFlightRequestManager = new InFlightRequestManager(properties);
         this.connectionManager = new ConnectionManager(inFlightRequestManager, properties);
         this.circuitBreakerManager = new CircuitBreakerManager(properties);
-        this.fallback = new DefaultFallback(new CacheFallback(),new MockFallback());
+        this.fallback = new DefaultFallback(new CacheFallback(), new MockFallback());
         this.retryPolicyManager = new RetryPolicyManager();
         this.loadBalancerManager = new LoadBalancerManager();
     }
@@ -97,7 +97,9 @@ public class ConsumerProxyFactory {
             if (method.getDeclaringClass() == Object.class) {
                 return invokeObjectMethod(proxy, method, args);
             }
-            List<ServiceMetadata> serviceMetadata = new ArrayList<>(registry.fetchServiceList(interfaceClass.getName()));
+            boolean genericInvoke = method.getName().equals("$invoke");
+            String serviceName = genericInvoke ? args[0].toString() : interfaceClass.getName();
+            List<ServiceMetadata> serviceMetadata = new ArrayList<>(registry.fetchServiceList(serviceName));
             ServiceMetadata provider = decideProvider(serviceMetadata);
             RpcCallMetrics metrics = RpcCallMetrics.createRpcCallMetrics(method, provider, args);
             if (provider == null) {
@@ -209,11 +211,20 @@ public class ConsumerProxyFactory {
         }
 
         private Request buildRequest(Method method, Object[] args) {
+            boolean genericInvoke = method.getName().equals("$invoke");
             Request request = new Request();
-            request.setMethodName(method.getName());
-            request.setParamsClass(method.getParameterTypes());
-            request.setParams(args);
-            request.setServiceName(interfaceClass.getName());
+            request.setGenericInvoke(genericInvoke);
+            if (genericInvoke) {
+                request.setParamsClassStr((String[]) args[2]);
+                request.setServiceName(args[0].toString());
+                request.setMethodName(args[1].toString());
+                request.setParams((Object[]) args[3]);
+            } else {
+                request.setMethodName(method.getName());
+                request.setParamsClass(method.getParameterTypes());
+                request.setServiceName(interfaceClass.getName());
+                request.setParams(args);
+            }
             return request;
         }
 

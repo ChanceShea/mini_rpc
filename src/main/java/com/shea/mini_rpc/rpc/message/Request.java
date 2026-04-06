@@ -53,4 +53,8 @@ public class Request implements Serializable {
      * 实际传递给远程方法的参数值
      */
     private Object[] params;
+
+    private boolean genericInvoke;
+
+    private String[] paramsClassStr;
 }

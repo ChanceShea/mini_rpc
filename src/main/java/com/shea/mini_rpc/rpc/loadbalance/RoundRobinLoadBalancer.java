@@ -1,6 +1,7 @@
 package com.shea.mini_rpc.rpc.loadbalance;
 
 import com.shea.mini_rpc.rpc.register.ServiceMetadata;
+import com.shea.mini_rpc.rpc.spi.Spi;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -10,6 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @description: TODO
  * @since : 2026/3/26 19:53
  */
+@Spi("robin")
 public class RoundRobinLoadBalancer implements LoadBalancer {
 
     final AtomicInteger index = new AtomicInteger(0);

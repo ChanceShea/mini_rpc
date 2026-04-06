@@ -1,13 +1,18 @@
 package com.shea.mini_rpc.rpc.consumer;
 
 import com.shea.mini_rpc.rpc.api.Add;
+import com.shea.mini_rpc.rpc.api.User;
 import com.shea.mini_rpc.rpc.register.RegistryConfig;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * RPC 服务消费者启动类
  * <p>
  * 演示如何启动一个 RPC 服务消费者，创建代理并发起远程调用
  * </p>
+ *
  * @author Shea.
  * @version 1.0
  * @since 2026/3/23 14:40
@@ -22,6 +27,7 @@ public class ConsumerApp {
      * 3. 获取远程服务代理对象
      * 4. 循环发起 RPC 调用测试
      * </p>
+     *
      * @param args 命令行参数
      * @throws Exception 启动或调用异常
      */
@@ -33,7 +39,8 @@ public class ConsumerApp {
         properties.setRegistryConfig(config);
         properties.setRpcPerChannel(10000);
         properties.setRpcPerSecond(10000);
-        Add addConsumer = new ConsumerProxyFactory(properties).getConsumerProxy(Add.class);
+        ConsumerProxyFactory consumerProxyFactory = new ConsumerProxyFactory(properties);
+//        Add addConsumer = consumerProxyFactory.getConsumerProxy(Add.class);
 //        for (int i = 0; i < 10; i++) {
 //            new Thread(() -> {
 //                while (true) {
@@ -43,9 +50,24 @@ public class ConsumerApp {
 //                }
 //            }).start();
 //        }
-        while(true) {
-            Thread.sleep(1000);
-            System.out.println(addConsumer.add(1, 2));
-        }
+//        while(true) {
+//            Thread.sleep(1000);
+//            System.out.println(addConsumer.add(1, 2));
+//        }
+        Add addConsumer = consumerProxyFactory.getConsumerProxy(Add.class);
+        System.out.println(addConsumer.add(1, 2));
+
+        GenericConsumer genericConsumer = consumerProxyFactory.getConsumerProxy(GenericConsumer.class);
+        System.out.println(genericConsumer.$invoke(Add.class.getName(), "add", new String[]{int.class.getName(), int.class.getName()}, new Object[]{4, 5}));
+        System.out.println(genericConsumer.$invoke(Add.class.getName(), "minus", new String[]{int.class.getName(), int.class.getName()}, new Object[]{4, 5}));
+
+
+        Map<String, Object> user1 = new HashMap<>();
+        user1.put("name", "zhangsan");
+        user1.put("age", 18);
+        Map<String, Object> user2 = new HashMap<>();
+        user2.put("name", "lisi");
+        user2.put("age", 19);
+        System.out.println(genericConsumer.$invoke(Add.class.getName(), "merge", new String[]{User.class.getName(), User.class.getName()}, new Object[]{user1, user2}));
     }
 }

@@ -14,4 +14,9 @@ public class ConsumerAddImpl implements Add{
     public Integer minus(int a, int b) {
         return 0;
     }
+
+    @Override
+    public User merge(User user1, User user2) {
+        return null;
+    }
 }

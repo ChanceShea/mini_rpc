@@ -1,5 +1,6 @@
 package com.shea.mini_rpc.rpc.provider;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.shea.mini_rpc.rpc.codec.SheaDecoder;
 import com.shea.mini_rpc.rpc.codec.SheaEncoder;
 import com.shea.mini_rpc.rpc.compress.CompressionManager;
@@ -23,6 +24,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -42,6 +44,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 public class ProviderServer {
+
+    private static final Set<Class<?>> NO_RESOLVE_CLASS_SET = Set.of(int.class, String.class, short.class, long.class, float.class, double.class, byte.class, char.class, Integer.class, Short.class, Long.class, Float.class, Double.class, Byte.class, Character.class);
 
     /**
      * Netty Boss 事件循环组，负责接受客户端连接
@@ -78,6 +82,7 @@ public class ProviderServer {
     private final CompressionManager compressionManager;
 
     private ThreadPoolExecutor invokeExecutor;
+
 
     /**
      * 构造函数，初始化 Provider 服务器
@@ -315,7 +320,7 @@ public class ProviderServer {
                 ctx.writeAndFlush(fail);
                 return;
             }
-            invokeExecutor.execute(new InvokeTask(request,ctx,instance));
+            invokeExecutor.execute(new InvokeTask(request, ctx, instance));
         }
 
         /**
@@ -380,42 +385,110 @@ public class ProviderServer {
         private final ChannelHandlerContext ctx;
         private final ProviderRegistry.Invocation<?> instance;
 
-        public InvokeTask(Request request,ChannelHandlerContext ctx,ProviderRegistry.Invocation<?> invocation) {
+        public InvokeTask(Request request, ChannelHandlerContext ctx, ProviderRegistry.Invocation<?> invocation) {
             this.request = request;
             this.ctx = ctx;
             this.instance = invocation;
         }
+
         @Override
         public void run() {
             EventLoop eventLoop = ctx.channel().eventLoop();
             try {
                 long start = System.currentTimeMillis();
-                Object result = instance.invoke(request.getMethodName(), request.getParamsClass(), request.getParams());
+                Class<?>[] paramsType = resolveMethodParams(request);
+                Object result = instance.invoke(
+                        request.getMethodName(),
+                        paramsType,
+                        resolveMethodParams(request, paramsType));
                 log.info("requestId: {},{},函数调用了{},结果是{},耗时是{}",
                         request.getRequestId(),
                         request.getServiceName(),
                         request.getMethodName(),
                         result,
                         System.currentTimeMillis() - start);
-                eventLoop.execute(() -> ctx.writeAndFlush(Response.success(result, request.getRequestId())));
+                Object finalResult = request.isGenericInvoke() ? resolveResult(result) : result;
+                eventLoop.execute(() -> ctx.writeAndFlush(Response.success(finalResult, request.getRequestId())));
             } catch (Exception e) {
                 eventLoop.execute(() -> ctx.writeAndFlush(Response.fail(e.getMessage(), request.getRequestId())));
             }
         }
-    }
 
-    /**
-     * 停止服务器
-     * <p>
-     * 优雅关闭事件循环组，释放资源
-     * </p>
-     */
-    public void stop() {
-        if (bossEventLoopGroup != null) {
-            bossEventLoopGroup.shutdownGracefully();
+        @SuppressWarnings("all")
+        private Object resolveResult(Object result) {
+            Class<?> resultClass = result.getClass();
+            if (NO_RESOLVE_CLASS_SET.contains(resultClass)) {
+                return result;
+            }
+            if (resultClass == Map.class) {
+                return new HashMap<>((Map) result);
+            }
+            if (resultClass == List.class) {
+                return new ArrayList<>((List) result);
+            }
+            if (resultClass == Set.class) {
+                return new HashSet<>((Set) result);
+            }
+            return new HashMap<>(JSONObject.from(result));
         }
-        if (workerEventLoopGroup != null) {
-            workerEventLoopGroup.shutdownGracefully();
+
+        @SuppressWarnings("all")
+        private Object[] resolveMethodParams(Request request, Class[] paramsType) {
+            if (!request.isGenericInvoke()) {
+                return request.getParams();
+            }
+            Object[] params = request.getParams();
+            Object[] result = new Object[paramsType.length];
+            for (int i = 0; i < params.length; i++) {
+                if (params[i] instanceof Map) {
+                    result[i] = new JSONObject((Map) params[i]).toJavaObject(paramsType[i]);
+                } else {
+                    result[i] = params[i];
+                }
+            }
+            return result;
+        }
+
+        @SuppressWarnings("all")
+        private Class<?>[] resolveMethodParams(Request request) throws ClassNotFoundException {
+            if (!request.isGenericInvoke()) {
+                return request.getParamsClass();
+            }
+            String[] paramsClassStr = request.getParamsClassStr();
+            Class<?>[] result = new Class<?>[paramsClassStr.length];
+            for (int i = 0; i < paramsClassStr.length; i++) {
+                result[i] = analysisFromString(paramsClassStr[i]);
+            }
+            return result;
+        }
+
+        private Class<?> analysisFromString(String classStr) throws ClassNotFoundException {
+            return switch (classStr) {
+                case "int" -> int.class;
+                case "long" -> long.class;
+                case "double" -> double.class;
+                case "float" -> float.class;
+                case "boolean" -> boolean.class;
+                case "char" -> char.class;
+                case "byte" -> byte.class;
+                case "short" -> short.class;
+                default -> Class.forName(classStr);
+            };
+        }
+
+        /**
+         * 停止服务器
+         * <p>
+         * 优雅关闭事件循环组，释放资源
+         * </p>
+         */
+        public void stop() {
+            if (bossEventLoopGroup != null) {
+                bossEventLoopGroup.shutdownGracefully();
+            }
+            if (workerEventLoopGroup != null) {
+                workerEventLoopGroup.shutdownGracefully();
+            }
         }
     }
 }

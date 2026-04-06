@@ -22,7 +22,7 @@ public class LoadBalancerManager {
     }
 
     public LoadBalancer getLoadBalancer(String name) {
-        return nameMap.get(name.toLowerCase(Locale.ROOT));
+        return nameMap.get(name.toUpperCase(Locale.ROOT));
     }
 
     private void init() {
